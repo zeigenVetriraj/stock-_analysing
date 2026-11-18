@@ -1,0 +1,118 @@
+{
+  "_comment": "IMMUTABLE risk parameters (Indian market / Dhan). Layer 3 (guardrails.py) reads these values but the enforcement LOGIC is hardcoded in Python. Do NOT let any LLM or runtime process rewrite this file. Amounts are in INR. allow_short_selling is false because CNC (delivery) swing trades cannot be shorted overnight in the Indian cash market; enable it only with an intraday product. earnings_blackout_days blocks NEW positions (shares and options) when the company's quarterly results are due within that many days, because prices can gap on results and option premiums usually lose their pre-results volatility right after; 0 turns it off, and an unknown results date never blocks. max_hold_days closes an automated swing position that has neither hit its stop nor its target after that many calendar days. swing_enabled switches the automated daily swing job on or off (it is OFF: the bot currently trades intraday only); manual `python main.py` runs are not affected.",
+  "max_position_pct": 0.05,
+  "stop_loss_pct": 0.03,
+  "take_profit_pct": 0.06,
+  "max_open_positions": 5,
+  "min_trade_notional": 1.0,
+  "allowed_actions": [
+    "BUY",
+    "SELL",
+    "HOLD"
+  ],
+  "allow_short_selling": false,
+  "earnings_blackout_days": 5,
+  "max_hold_days": 20,
+  "swing_enabled": false,
+  "options": {
+    "_comment": "BUY-ONLY options mode (python main.py --options): calls for bullish views, puts for bearish ones. Writing/selling options is not supported at all. A bought option can lose at most its premium, so the premium outlay is capped at max_premium_pct of equity, in whole lots. Stop-loss/take-profit are percentages of the premium. Open interest is measured in lots. Set enabled to false to switch options off entirely.",
+    "enabled": true,
+    "max_premium_pct": 0.02,
+    "min_days_to_expiry": 14,
+    "max_days_to_expiry": 60,
+    "strikes_each_side": 5,
+    "min_open_interest_lots": 50,
+    "max_bid_ask_spread_pct": 5.0,
+    "min_abs_delta": 0.25,
+    "max_abs_delta": 0.75,
+    "stop_loss_pct": 0.3,
+    "take_profit_pct": 0.6,
+    "max_lots": 10
+  },
+  "penny": {
+    "_comment": "Weekly penny-stock job (python automate.py penny). Stricter than the main rules because penny stocks are volatile, thinly traded and prone to manipulation: only NSE 'EQ' series (the trade-to-trade BE/BZ segments are excluded), a price band, a minimum average daily traded value, a smaller position size, wider stops and fewer open positions. Set enabled to false to switch the job off.",
+    "enabled": false,
+    "min_price": 2.0,
+    "max_price": 50.0,
+    "min_avg_turnover_cr": 1.0,
+    "max_position_pct": 0.01,
+    "stop_loss_pct": 0.08,
+    "take_profit_pct": 0.2,
+    "max_open_positions": 3,
+    "max_hold_days": 30
+  },
+  "intraday": {
+    "_comment": "Daily intraday job (python automate.py intraday-open / intraday-close). PAPER ONLY for now: live intraday needs broker-side stop orders and a static IP. One trade a day at most, long or short (shorting is allowed intraday because the position is closed the same day), sized at max_position_pct of equity with no leverage, entries only inside the entry window, and every position squared off at square_off (IST). models lists the kinds of setup the job may trade: breakout (price beyond the 09:15-09:45 range), fvg (price back at an unfilled fair value gap made today), fib (price has given back 38.2-61.8% of today's swing) and gap_fade (trade against the day's biggest opening gap); remove a name to switch that model off. Each setup puts its stop where its idea is proven wrong, never wider than stop_loss_pct, and its target at take_profit_pct / stop_loss_pct times that stop. cost_pct is the estimated round-trip charge (% of the position: brokerage, STT, exchange fees, GST, stamp duty, slippage) taken off every paper intraday trade so paper results are not flattered. The paper square-off replays 5-minute bars after the entry: if a bar touches both the stop and the target, the stop is assumed to come first. See state/backtests/intraday_backtest.md for what each model did on past data. practice: true puts the paper account in practice mode - Claude must take the best setup every day and may hold only when something is clearly wrong with every candidate - so the bot builds experience while no setup has a proven edge; set it to false to trade only clean setups.",
+    "enabled": true,
+    "max_position_pct": 0.1,
+    "stop_loss_pct": 0.01,
+    "take_profit_pct": 0.02,
+    "max_trades_per_day": 1,
+    "entry_after": "09:45",
+    "entry_cutoff": "11:30",
+    "square_off": "15:15",
+    "models": ["breakout", "fvg", "fib", "gap_fade"],
+    "cost_pct": 0.12,
+    "practice": true
+  },
+  "penny_intraday": {
+    "_comment": "The same intraday job on penny stocks, with its OWN paper account, journal and learning (everything under state/penny/). PAPER ONLY. The stock list is rebuilt every trading day from NSE's bhavcopy: EQ series only (the trade-to-trade series BE/BZ cannot be traded intraday), priced min_price-max_price, the max_stocks most traded with at least min_avg_turnover_cr (Rs crore) traded a day on average over 20 days. Penny stocks swing more, so a setup's stop may be as wide as stop_loss_pct (2%), and cost_pct (0.30%) is higher because the gap between the buy and sell price is wider. A setup is skipped unless its entry, stop and target all sit circuit_margin_pct inside the stock's daily circuit limits (default_band_pct is assumed when NSE's list of price bands cannot be read). The other fields mean the same as in 'intraday'.",
+    "enabled": true,
+    "max_position_pct": 0.1,
+    "stop_loss_pct": 0.02,
+    "take_profit_pct": 0.04,
+    "max_trades_per_day": 1,
+    "entry_after": "09:45",
+    "entry_cutoff": "11:30",
+    "square_off": "15:15",
+    "models": [
+      "breakout",
+      "fvg",
+      "fib",
+      "gap_fade"
+    ],
+    "cost_pct": 0.3,
+    "practice": true,
+    "min_price": 2,
+    "max_price": 50,
+    "min_avg_turnover_cr": 1.0,
+    "max_stocks": 50,
+    "circuit_margin_pct": 0.5,
+    "default_band_pct": 5
+  },
+  "futures_intraday": {
+    "_comment": "The same intraday job on index FUTURES (Nifty, Bank Nifty, Fin Nifty and Midcap Nifty Select), with its OWN paper account, journal and learning (everything under state/futures/). PAPER ONLY. Prices are the index levels from Yahoo (a future trades very close to its index during the day). One trade a day, long or short, sized in lots: enough lots that the loss at the stop is about risk_per_trade_pct of the account (one lot is allowed up to twice that), at most max_lots, and the margin (margin_pct of the contract value) at most max_margin_pct of the account. Only the margin is blocked from cash, and profit or loss is the full contract's move: that is the leverage. cost_pct (0.04% of the contract value) covers brokerage, STT, exchange fees, GST, stamp duty and slippage. lot_sizes are used only when NSE's list of lot sizes cannot be read. The other fields mean the same as in 'intraday'.",
+    "enabled": true,
+    "max_position_pct": 1.0,
+    "stop_loss_pct": 0.01,
+    "take_profit_pct": 0.02,
+    "max_trades_per_day": 1,
+    "entry_after": "09:45",
+    "entry_cutoff": "11:30",
+    "square_off": "15:15",
+    "models": [
+      "breakout",
+      "fvg",
+      "fib",
+      "gap_fade"
+    ],
+    "cost_pct": 0.04,
+    "practice": true,
+    "lot_sizes": {
+      "NIFTY": 65,
+      "BANKNIFTY": 30,
+      "FINNIFTY": 60,
+      "MIDCPNIFTY": 120
+    },
+    "margin_pct": 12,
+    "risk_per_trade_pct": 1.0,
+    "max_lots": 3,
+    "max_margin_pct": 60
+  },
+  "debate": {
+    "_comment": "Bull vs bear, then a judge, before every intraday trade in all three books (large stocks, penny, futures). Claude's pick is debated first: a bull Claude argues for the trade, a bear Claude against, for 'rounds' turns each, and every point must quote a field and value from the real data (a referee in code throws out points that do not match). A judge Claude then decides TRADE or SKIP. On SKIP the next setups on the shortlist are debated, up to 'max_candidates'; if the judge approves none, there is no trade that day. Entry, stop, target and the risk layer are unchanged. Set enabled to false to trade Claude's pick directly.",
+    "enabled": true,
+    "rounds": 2,
+    "max_candidates": 3
+  }
+}

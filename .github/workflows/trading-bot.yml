@@ -1,0 +1,92 @@
+# Paper trading bot: runs automate.py on a schedule and sends the Telegram report.
+# Paper mode is fixed below (AUTOTRADE_MODE: paper, DHAN_ENABLE_LIVE_TRADING: "false"),
+# so this workflow can never place a real order. GitHub-hosted runners have no
+# static IP, which Dhan requires for API orders anyway.
+#
+# Secrets used (Settings -> Secrets and variables -> Actions -> Secrets):
+#   ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (see SETUP.md)
+#   DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN (optional, not needed for paper trading)
+# The bot runs only after you set the repository VARIABLE BOT_ENABLED to true
+# (Settings -> Secrets and variables -> Actions -> Variables), so a fresh copy
+# does nothing until it is set up.
+name: Trading bot (paper)
+
+on:
+  schedule:
+    # Intraday only. The swing ("daily") and penny jobs are switched off; they can
+    # still be started by hand below, but do nothing while the rules file has them off.
+    # NOTE: GitHub starts scheduled runs late (often 5-9 hours late), so the punctual
+    # runs are started from outside with "Run workflow"
+    # (workflow_dispatch). These lines are only a silent safety net: a scheduled
+    # run sends a message only if it actually opens or closes a position (for
+    # example squaring off a trade the punctual run missed). Results stay correct
+    # because exits are replayed from 5-minute bars; an entry after 11:30 IST is skipped.
+    - cron: "20 4 * * 1-5"   # 09:50 IST Mon-Fri: intraday entry
+    - cron: "33 5-8 * * 1-5" # 11:03, 12:03, 13:03, 14:03 IST: intraday check (message only if stop/target hit)
+    - cron: "50 9 * * 1-5"   # 15:20 IST Mon-Fri: intraday square-off (uses the 15:15 price)
+    - cron: "30 2 * * 6"     # Saturday morning IST: save the week's 5-minute bars and re-run the backtest
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "intraday-open, intraday-check, intraday-close, report, close-out or intraday-backtest"
+        default: "report"
+
+permissions:
+  contents: write   # to commit the paper ledger in state/
+
+concurrency:
+  group: trading-ledger   # never run two jobs on the ledger at once
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: ${{ vars.BOT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the bot
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WHATSAPP_PROVIDER: telegram
+          DHAN_CLIENT_ID: ${{ secrets.DHAN_CLIENT_ID }}
+          DHAN_ACCESS_TOKEN: ${{ secrets.DHAN_ACCESS_TOKEN }}
+          DHAN_ENV: sandbox
+          AUTOTRADE_MODE: paper
+          DHAN_ENABLE_LIVE_TRADING: "false"
+          SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_JOB: ${{ github.event.inputs.job }}
+        run: |
+          case "$SCHEDULE" in
+            "20 4 * * 1-5")   JOB=intraday-open ;;
+            "33 5-8 * * 1-5") JOB=intraday-check ;;
+            "50 9 * * 1-5")   JOB=intraday-close ;;
+            "30 2 * * 6")     JOB=intraday-backtest ;;
+            *)              JOB="${MANUAL_JOB:-report}" ;;
+          esac
+          EXTRA=""
+          if [ -n "$SCHEDULE" ] && [ "$JOB" != "intraday-backtest" ]; then EXTRA="--quiet-unless-changed"; fi
+          python automate.py "$JOB" $EXTRA
+
+      - name: Save the paper ledger
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/ 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Update paper ledger"
+            git pull --rebase
+            git push
+          fi

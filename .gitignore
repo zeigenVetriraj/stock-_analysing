@@ -1,0 +1,45 @@
+# --- Secrets ---------------------------------------------------------------
+.env
+*.pem
+*.key
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtual environments --------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# --- Tooling / caches ------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- IDE / OS --------------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Runtime artifacts -----------------------------------------------------
+*.log
+logs/
+data/*.csv
+# Ledgers from runs outside GitHub Actions (local tests)
+state/local/
+
+# --- Claude Code app / session settings ------------------------------------
+.claude/
+
+# --- Backtest working file (rebuilt from the saved bars on every run) --------
+state/backtests/intraday_setups.csv
